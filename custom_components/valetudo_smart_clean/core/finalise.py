@@ -118,7 +118,7 @@ def end_job(
             elif len(open_rooms) > 1:
                 state.isolate_on = today
         elif end == JobEnd.INTERRUPTED:
-            if job.resume_expired:
+            if job.resume_expired or job.return_home_failed:
                 failed = [
                     room
                     for room in job.dispatched
@@ -163,6 +163,7 @@ def end_job(
     elif end == JobEnd.INTERRUPTED and (
         job.stop in (StopCause.BLOCKED, StopCause.PAUSE_TIMEOUT)
         or job.resume_expired
+        or job.return_home_failed
     ):
         commands.append(_stopped_notification(state, snap, cfg, reason or job.stop_reason))
     elif end == JobEnd.DISPATCH_FAILED:

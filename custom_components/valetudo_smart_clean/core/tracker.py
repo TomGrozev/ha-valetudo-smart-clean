@@ -26,6 +26,17 @@ from .models import (
 )
 
 
+MAX_RETURN_HOME = 3
+
+
+def _send_return_home(
+    job: Job, snap: Snapshot, reason: str, commands: list[Command]
+) -> None:
+    job.return_home_sent_at = snap.now
+    job.return_home_count += 1
+    commands.append(ReturnHome(reason))
+
+
 def _begin_return(
     job: Job,
     snap: Snapshot,
@@ -36,8 +47,7 @@ def _begin_return(
     job.phase = JobPhase.RETURNING
     job.stop = stop
     job.stop_reason = reason
-    job.return_home_sent_at = snap.now
-    commands.append(ReturnHome(reason))
+    _send_return_home(job, snap, reason, commands)
 
 
 def credit_presence(state: State, snap: Snapshot, cfg: Config) -> None:
@@ -108,8 +118,7 @@ def drop_rooms(
         job.phase = JobPhase.RETURNING
         job.stop = StopCause.BLOCKED
         job.stop_reason = reason
-        job.return_home_sent_at = snap.now
-        commands.append(ReturnHome(reason))
+        _send_return_home(job, snap, reason, commands)
     return commands
 
 
@@ -140,11 +149,14 @@ def advance(
     if job.phase == JobPhase.DISPATCHED:
         if snap.vacuum == VacuumStatus.CLEANING:
             job.phase = JobPhase.RUNNING
-        elif snap.vacuum in (VacuumStatus.DOCKED, VacuumStatus.IDLE):
-            # Time observed unavailable must not count: a reconnect is not a
-            # failed dispatch. Only a docked/idle observation ages this timeout.
-            observed_since = max(job.started_at, snap.vacuum_since)
-            if snap.now - observed_since >= cfg.dispatch_timeout:
+        elif snap.vacuum == VacuumStatus.UNAVAILABLE:
+            # Reconnects are not failed dispatches: start counting again when
+            # the vacuum is next observed.
+            job.dispatch_since = None
+        else:
+            if job.dispatch_since is None:
+                job.dispatch_since = max(job.started_at, snap.vacuum_since)
+            if snap.now - job.dispatch_since >= cfg.dispatch_timeout:
                 return (
                     end_job(
                         state,
@@ -216,12 +228,23 @@ def advance(
             return end_job(state, snap, cfg, end, reason=job.stop_reason), True
 
     if job.phase == JobPhase.RETURNING:
-        if snap.vacuum == VacuumStatus.CLEANING:
+        if snap.vacuum in (VacuumStatus.CLEANING, VacuumStatus.PAUSED):
             last_sent = job.return_home_sent_at
             if last_sent is None or snap.now - last_sent >= cfg.dispatch_timeout:
+                if job.return_home_count >= MAX_RETURN_HOME:
+                    job.return_home_failed = True
+                    return (
+                        end_job(
+                            state,
+                            snap,
+                            cfg,
+                            JobEnd.INTERRUPTED,
+                            reason="Willy did not go home; check it",
+                        ),
+                        True,
+                    )
                 reason = job.stop_reason or "Returning home"
-                job.return_home_sent_at = snap.now
-                commands.append(ReturnHome(reason))
+                _send_return_home(job, snap, reason, commands)
         elif (
             snap.vacuum in (VacuumStatus.DOCKED, VacuumStatus.IDLE)
             and settled

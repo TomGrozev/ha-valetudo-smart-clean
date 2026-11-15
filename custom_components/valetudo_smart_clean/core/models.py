@@ -177,6 +177,12 @@ class Job:
     stop_reason: str | None = None
     return_home_sent_at: datetime | None = None
     """When ReturnHome was last emitted; RETURNING retries it once per dispatch_timeout."""
+    return_home_count: int = 0
+    """ReturnHome sends for this job, including the first; capped at three."""
+    return_home_failed: bool = False
+    """ReturnHome was retried to the cap and the robot still did not dock."""
+    dispatch_since: datetime | None = None
+    """When the robot was last observed available while DISPATCHED; timeout counts from here."""
     resume_expired: bool = False
     """Docked with flag resumable past resume_timeout; attempts are charged on the end."""
     error: str | None = None

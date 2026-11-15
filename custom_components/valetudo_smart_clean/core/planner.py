@@ -64,8 +64,12 @@ def failed_gates(state: State, snap: Snapshot, cfg: Config) -> tuple[str, ...]:
     dock_status = (snap.dock_status or "").lower()
     if not snap.dock_ok or dock_status not in {"", "idle", "drying"}:
         gates.append("dock")
-    if (snap.flag or "").lower() in FLAGS_BUSY:
-        gates.append("flag")
+    flag = (snap.flag or "").lower()
+    if flag in FLAGS_BUSY:
+        # Level-triggered: resumable is Valetudo's stale job flag once the dock
+        # has been held past the recharge window. A new segment job replaces it.
+        if flag != "resumable" or snap.now - snap.vacuum_since < cfg.resume_timeout:
+            gates.append("flag")
     if global_blocker(cfg, snap) is not None:
         gates.append("blocked")
     if not eligible_rooms(state, snap, cfg):
@@ -103,6 +107,7 @@ def plan(state: State, snap: Snapshot, cfg: Config) -> list[Command]:
         last_position=snap.position,
         last_seen=snap.now,
         last_vacuum=snap.vacuum,
+        dispatch_since=snap.now,
     )
     commands.append(CleanRooms(rooms))
     commands.append(

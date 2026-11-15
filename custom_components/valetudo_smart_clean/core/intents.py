@@ -86,6 +86,7 @@ def _clean_now(state: State, snap: Snapshot, cfg: Config, intent: CleanNow) -> l
         last_position=snap.position,
         last_seen=snap.now,
         last_vacuum=snap.vacuum,
+        dispatch_since=snap.now,
     )
     commands.append(CleanRooms(rooms))
     commands.append(
@@ -164,6 +165,7 @@ def apply_intent(state: State, intent: Intent, snap: Snapshot, cfg: Config) -> R
             job.stop = StopCause.USER
             job.stop_reason = intent.reason
             job.return_home_sent_at = snap.now
+            job.return_home_count += 1
             commands = [ReturnHome(intent.reason)]
 
     return Result(new_state, tuple(commands))
