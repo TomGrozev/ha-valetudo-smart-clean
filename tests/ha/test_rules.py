@@ -100,6 +100,35 @@ async def test_rule_template_error_is_active(
     assert runtime.compiled_rules[0].error_logged is True
 
 
+async def test_stored_template_rule_evaluates(
+    hass: HomeAssistant, setup_entry, entry
+) -> None:
+    # Options hold templates as plain strings; they must compile to real templates.
+    hass.states.async_set("sensor.person", "Study")
+    runtime = await _reload_rules(
+        hass,
+        entry,
+        [
+            {
+                "id": "study",
+                "name": "Study is occupied",
+                "conditions": [
+                    {
+                        "condition": "template",
+                        "value_template": "{{ is_state('sensor.person', 'Study') }}",
+                    }
+                ],
+                "rooms": [],
+                "overridable": True,
+            }
+        ],
+    )
+
+    assert runtime._snapshot().active_blockers["study"] == "Study is occupied"
+    hass.states.async_set("sensor.person", "Kitchen")
+    assert "study" not in runtime._snapshot().active_blockers
+
+
 async def test_whole_house_rule_blocks_even_when_occupied(
     hass: HomeAssistant, setup_entry, entry
 ) -> None:

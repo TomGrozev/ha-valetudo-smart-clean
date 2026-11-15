@@ -14,6 +14,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from uuid import uuid4
 
+import homeassistant.helpers.config_validation as cv
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.condition import (
     ConditionChecker,
@@ -165,7 +166,9 @@ async def async_validate_rule_conditions(
     hass: HomeAssistant, conditions: Any
 ) -> list[Any]:
     """Validate conditions the way automations do; raises on invalid config."""
-    return await async_validate_conditions_config(hass, list(_as_conditions(conditions)))
+    return await async_validate_conditions_config(
+        hass, cv.CONDITIONS_SCHEMA(list(_as_conditions(conditions)))
+    )
 
 
 async def async_compile_rules(
@@ -181,7 +184,7 @@ async def async_compile_rules(
     for rule in rules:
         conditions = list(rule.conditions)
         try:
-            conditions = await async_validate_conditions_config(hass, conditions)
+            conditions = await async_validate_rule_conditions(hass, conditions)
         except Exception:
             _LOGGER.error(
                 "Blocker rule %s has invalid conditions; treating it as active",
