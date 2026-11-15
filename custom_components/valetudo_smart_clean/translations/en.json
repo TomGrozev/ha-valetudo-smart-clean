@@ -1,0 +1,207 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Valetudo Smart Clean",
+        "description": "Pick the robot to plan for and the script that sends phone notifications.",
+        "data": {
+          "vacuum": "Vacuum",
+          "notify_script": "Notification script"
+        }
+      },
+      "entities": {
+        "title": "Robot entities",
+        "description": "These are pre-filled from the vacuum's device. Leave a field empty when you do not have that sensor.",
+        "data": {
+          "status_flag": "Status flag sensor",
+          "error": "Error sensor",
+          "dock_status": "Dock status sensor",
+          "battery": "Battery sensor",
+          "dock_consumables": "Dock consumable sensors",
+          "fan": "Fan speed select",
+          "mode": "Cleaning mode select",
+          "position_entity": "Position source entity",
+          "position_attribute": "Position attribute path"
+        }
+      },
+      "rooms": {
+        "title": "Rooms",
+        "description": "Rooms are Home Assistant areas. Map each area to its Valetudo segments in the vacuum's own options so vacuum.clean_area can resolve them.",
+        "data": {
+          "rooms": "Rooms in cleaning order"
+        }
+      }
+    },
+    "error": {
+      "vacuum_not_found": "That vacuum entity does not exist.",
+      "no_rooms": "Pick at least one room."
+    },
+    "abort": {
+      "already_configured": "This vacuum already has a Smart Clean entry."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Valetudo Smart Clean",
+        "menu_options": {
+          "schedule": "Schedule",
+          "behaviour": "Behaviour",
+          "rooms": "Rooms",
+          "blockers": "Global blockers",
+          "finish": "Save and close"
+        }
+      },
+      "schedule": {
+        "title": "Schedule",
+        "data": {
+          "window_start": "Cleaning window starts",
+          "window_end": "Cleaning window ends",
+          "weekdays": "Days that may start a clean",
+          "mop_weekdays": "Mop days",
+          "vacuum_mode": "Mode on vacuum days",
+          "mop_mode": "Mode on mop days"
+        }
+      },
+      "behaviour": {
+        "title": "Behaviour",
+        "data": {
+          "min_battery": "Minimum battery (%)",
+          "max_attempts": "Attempts per room per day",
+          "dock_dwell": "Dock dwell before starting (seconds)",
+          "end_settle": "Docked or idle time that ends a job (seconds)",
+          "dispatch_timeout": "Dispatch timeout (seconds)",
+          "pause_timeout": "Pause timeout (seconds)",
+          "resume_timeout": "Resume timeout (seconds)",
+          "retry_delay": "Retry delay (seconds)",
+          "min_presence": "Minimum presence in a room (seconds)",
+          "min_presence_fraction": "Fraction of the usual clean time needed",
+          "max_presence_gap": "Longest credited gap (seconds)",
+          "quiet_travel": "Quiet fan while travelling",
+          "travel_fan": "Travel fan speed",
+          "clean_fan": "Cleaning fan speed",
+          "daily_report": "Send a daily report"
+        }
+      },
+      "rooms": {
+        "title": "Rooms",
+        "description": "Choose a room to edit its position values and blockers.",
+        "data": {
+          "rooms": "Room"
+        }
+      },
+      "room": {
+        "title": "Room: {room}",
+        "description": "Position values are the Valetudo segment names the map camera reports while the robot is in this room.",
+        "data": {
+          "position_values": "Position values (comma separated)",
+          "room_blockers": "Blocks unless 'clean when occupied' is on",
+          "room_hard_blockers": "Always blocks"
+        }
+      },
+      "blockers": {
+        "title": "Global blockers",
+        "description": "Automatic cleaning waits while any of these is on.",
+        "data": {
+          "global_blockers": "Blockers"
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "smart_clean": {
+        "name": "Smart clean"
+      },
+      "clean_when_occupied": {
+        "name": "Clean when occupied"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status"
+      },
+      "last_job": {
+        "name": "Last job"
+      }
+    }
+  },
+  "services": {
+    "clean_rooms": {
+      "name": "Clean rooms",
+      "description": "Start cleaning the given rooms now.",
+      "fields": {
+        "rooms": {
+          "name": "Rooms",
+          "description": "Rooms to clean, in this order."
+        },
+        "ignore_blockers": {
+          "name": "Ignore blockers",
+          "description": "Clean even when a blocker is on."
+        },
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Only needed when more than one robot is configured."
+        }
+      }
+    },
+    "skip_today": {
+      "name": "Skip a room today",
+      "description": "Mark a room as skipped until tomorrow.",
+      "fields": {
+        "room": {
+          "name": "Room"
+        },
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Only needed when more than one robot is configured."
+        }
+      }
+    },
+    "retry_today": {
+      "name": "Retry today",
+      "description": "Clear today's skips and attempts, then plan again.",
+      "fields": {
+        "room": {
+          "name": "Room",
+          "description": "Leave empty to retry every room."
+        },
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Only needed when more than one robot is configured."
+        }
+      }
+    },
+    "mark_cleaned": {
+      "name": "Mark room cleaned",
+      "description": "Record a room as cleaned, for example after a manual clean.",
+      "fields": {
+        "room": {
+          "name": "Room"
+        },
+        "when": {
+          "name": "When",
+          "description": "Defaults to now."
+        },
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Only needed when more than one robot is configured."
+        }
+      }
+    },
+    "stop": {
+      "name": "Stop cleaning",
+      "description": "Stop the current job and send the robot home.",
+      "fields": {
+        "reason": {
+          "name": "Reason",
+          "description": "Shown in the notification to the household."
+        },
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "Only needed when more than one robot is configured."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# Test harness for Valetudo Smart Clean.
+#
+# pytest-homeassistant is the Home Assistant team's centrally managed test
+# package; it replaces pytest-homeassistant-custom-component, which is now
+# broken for current Home Assistant versions ("custom component developers
+# should move to the centrally managed package"). pytest-homeassistant ships
+# homeassistant==<same version> together with the pytest plugins HA core uses
+# (pytest-asyncio, pytest-freezer, pytest-socket, respx, syrupy ...).
+#
+# The pin tracks the integration's declared Home Assistant floor (2026.11):
+# 2026.11.1 == homeassistant 2026.11.1, requires Python >= 3.14.2.
+#
+# Install:
+#   uv venv --python 3.14 .venv
+#   uv pip install --python .venv/bin/python pytest-homeassistant==2026.11.1
+#   .venv/bin/python -m pytest -q
+#
+# Do not install pytest-homeassistant-custom-component alongside it; the two
+# packages provide overlapping fixtures.
+pytest-homeassistant==2026.11.1

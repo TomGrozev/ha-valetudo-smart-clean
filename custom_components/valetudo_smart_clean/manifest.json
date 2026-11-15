@@ -1,0 +1,13 @@
+{
+  "domain": "valetudo_smart_clean",
+  "name": "Valetudo Smart Clean",
+  "codeowners": ["@theg-house"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/theg-house/ha-valetudo-smart-clean",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/theg-house/ha-valetudo-smart-clean/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

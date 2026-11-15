@@ -1,0 +1,99 @@
+clean_rooms:
+  name: Clean rooms
+  description: >-
+    Start cleaning the given rooms now. Ignores smart clean, the cleaning
+    window, room switches, skips and attempts, but still needs the robot to be
+    available.
+  fields:
+    rooms:
+      name: Rooms
+      description: Rooms to clean, in this order.
+      required: true
+      selector:
+        area:
+          multiple: true
+          reorder: true
+    ignore_blockers:
+      name: Ignore blockers
+      description: Clean even when a blocker is on.
+      default: true
+      selector:
+        boolean:
+    config_entry_id:
+      name: Config entry
+      description: Only needed when more than one robot is configured.
+      selector:
+        config_entry:
+          integration: valetudo_smart_clean
+
+skip_today:
+  name: Skip a room today
+  description: Mark a room as skipped until tomorrow.
+  fields:
+    room:
+      name: Room
+      required: true
+      selector:
+        area:
+    config_entry_id:
+      name: Config entry
+      description: Only needed when more than one robot is configured.
+      selector:
+        config_entry:
+          integration: valetudo_smart_clean
+
+retry_today:
+  name: Retry today
+  description: >-
+    Clear today's skips and attempts for one room, or for every room when no
+    room is given, then plan again immediately.
+  fields:
+    room:
+      name: Room
+      description: Leave empty to retry every room.
+      selector:
+        area:
+    config_entry_id:
+      name: Config entry
+      description: Only needed when more than one robot is configured.
+      selector:
+        config_entry:
+          integration: valetudo_smart_clean
+
+mark_cleaned:
+  name: Mark room cleaned
+  description: Record a room as cleaned, for example after a manual clean.
+  fields:
+    room:
+      name: Room
+      required: true
+      selector:
+        area:
+    when:
+      name: When
+      description: Defaults to now.
+      selector:
+        datetime:
+    config_entry_id:
+      name: Config entry
+      description: Only needed when more than one robot is configured.
+      selector:
+        config_entry:
+          integration: valetudo_smart_clean
+
+stop:
+  name: Stop cleaning
+  description: Stop the current job and send the robot home.
+  fields:
+    reason:
+      name: Reason
+      description: Shown in the notification to the household.
+      default: Stopped by user
+      selector:
+        text:
+    config_entry_id:
+      name: Config entry
+      description: Only needed when more than one robot is configured.
+      selector:
+        config_entry:
+          integration: valetudo_smart_clean
