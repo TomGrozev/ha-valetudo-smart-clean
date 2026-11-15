@@ -9,7 +9,7 @@ from pytest_homeassistant.common import async_mock_service
 
 from custom_components.valetudo_smart_clean import build_snapshot
 from custom_components.valetudo_smart_clean.const import (
-    CONF_ROOM_HARD_BLOCKERS,
+    CONF_BLOCKER_RULES,
     DOMAIN,
     EVENT_NOTIFICATION_ACTION,
 )
@@ -112,7 +112,7 @@ async def test_unknown_notification_action_is_ignored(
     assert runtime.state is before
 
 
-async def test_hard_blocker_is_watched(
+async def test_rule_entity_change_triggers_reconcile(
     hass: HomeAssistant, setup_entry, entry
 ) -> None:
     hard_blocker = "binary_sensor.hall_door"
@@ -121,7 +121,22 @@ async def test_hard_blocker_is_watched(
         entry,
         options={
             **entry.options,
-            CONF_ROOM_HARD_BLOCKERS: {"toilet": [hard_blocker]},
+            CONF_BLOCKER_RULES: [
+                *entry.options[CONF_BLOCKER_RULES],
+                {
+                    "id": "hall-door",
+                    "name": "Hall door open",
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": hard_blocker,
+                            "state": "on",
+                        }
+                    ],
+                    "rooms": ["toilet"],
+                    "overridable": False,
+                },
+            ],
         },
     )
     await hass.config_entries.async_reload(entry.entry_id)
@@ -130,11 +145,22 @@ async def test_hard_blocker_is_watched(
     runtime = entry.runtime_data
     assert hard_blocker in runtime._watched_entity_ids()
 
+    calls = 0
+    original = runtime.async_reconcile
+
+    async def counting_reconcile() -> None:
+        nonlocal calls
+        calls += 1
+        await original()
+
+    runtime.async_reconcile = counting_reconcile
     hass.states.async_set(hard_blocker, "on")
     await hass.async_block_till_done()
-    assert hard_blocker in (
-        build_snapshot(hass, runtime.config, runtime.data).active_blockers
+    snapshot = build_snapshot(
+        hass, runtime.config, runtime.data, runtime.compiled_rules
     )
+    assert snapshot.active_blockers["hall-door"] == "Hall door open"
+    assert calls >= 1
 
 
 async def test_stopped_runtime_ignores_queued_reconcile(

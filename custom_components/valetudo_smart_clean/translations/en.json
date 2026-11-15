@@ -48,7 +48,7 @@
           "schedule": "Schedule",
           "behaviour": "Behaviour",
           "rooms": "Rooms",
-          "blockers": "Global blockers",
+          "blockers": "Blockers",
           "finish": "Save and close"
         }
       },
@@ -85,7 +85,7 @@
       },
       "rooms": {
         "title": "Rooms",
-        "description": "Choose a room to edit its position values and blockers.",
+        "description": "Choose a room to edit its position values.",
         "data": {
           "rooms": "Room"
         }
@@ -94,18 +94,64 @@
         "title": "Room: {room}",
         "description": "Position values are the Valetudo segment names the map camera reports while the robot is in this room.",
         "data": {
-          "position_values": "Position values (comma separated)",
-          "room_blockers": "Blocks unless 'clean when occupied' is on",
-          "room_hard_blockers": "Always blocks"
+          "position_values": "Position values (comma separated)"
         }
       },
       "blockers": {
-        "title": "Global blockers",
-        "description": "Automatic cleaning waits while any of these is on.",
+        "title": "Blockers",
+        "description": "Rules built from automation conditions. A rule blocks while every one of its conditions is true.",
+        "menu_options": {
+          "blocker_add": "Add a rule",
+          "blocker_edit": "Edit a rule",
+          "blocker_delete": "Delete a rule",
+          "blocker_import": "Import rules from YAML",
+          "blocker_back": "Back"
+        }
+      },
+      "blocker_add": {
+        "title": "Add a blocker rule",
+        "description": "Leave rooms empty for a whole-house rule. A whole-house rule always blocks, even with clean when occupied on.",
         "data": {
-          "global_blockers": "Blockers"
+          "name": "Name shown as the reason",
+          "conditions": "Conditions",
+          "rooms": "Rooms (empty means the whole house)",
+          "overridable": "Clean when occupied overrides this rule"
+        }
+      },
+      "blocker_edit": {
+        "title": "Edit a blocker rule",
+        "data": {
+          "id": "Rule"
+        }
+      },
+      "blocker_edit_form": {
+        "title": "Edit a blocker rule",
+        "description": "Leave rooms empty for a whole-house rule. A whole-house rule always blocks, even with clean when occupied on.",
+        "data": {
+          "name": "Name shown as the reason",
+          "conditions": "Conditions",
+          "rooms": "Rooms (empty means the whole house)",
+          "overridable": "Clean when occupied overrides this rule"
+        }
+      },
+      "blocker_delete": {
+        "title": "Delete a blocker rule",
+        "data": {
+          "id": "Rule"
+        }
+      },
+      "blocker_import": {
+        "title": "Import blocker rules",
+        "description": "Paste a YAML list of rules with name, conditions, rooms and overridable. Ids are generated; a rule with the same name is replaced.",
+        "data": {
+          "blocker_rules": "Rules"
         }
       }
+    },
+    "error": {
+      "name_required": "Give the rule a name.",
+      "invalid_conditions": "Those conditions are not valid. Check entity ids and condition fields.",
+      "invalid_rules": "That is not a list of rules with name, conditions and rooms."
     }
   },
   "entity": {

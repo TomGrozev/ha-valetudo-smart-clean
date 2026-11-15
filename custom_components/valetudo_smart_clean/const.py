@@ -14,6 +14,9 @@ DOMAIN: Final = "valetudo_smart_clean"
 PLATFORMS: Final = ("switch", "sensor")
 
 STORAGE_VERSION: Final = 1
+CONFIG_ENTRY_VERSION: Final = 2
+"""v2 replaced entity-id blocker lists with named condition rules."""
+CONFIG_ENTRY_MINOR_VERSION: Final = 1
 TICK_INTERVAL: Final = timedelta(seconds=15)
 
 EVENT_NOTIFICATION_ACTION: Final = "mobile_app_notification_action"
@@ -44,10 +47,19 @@ DEFAULT_POSITION_ATTRIBUTE: Final = "vacuum_position.in_room"
 
 # --- options: schedule and behaviour ---------------------------------------
 
+CONF_BLOCKER_RULES: Final = "blocker_rules"
+CONF_BLOCKER_ID: Final = "id"
+CONF_BLOCKER_NAME: Final = "name"
+CONF_BLOCKER_CONDITIONS: Final = "conditions"
+CONF_BLOCKER_ROOMS: Final = "rooms"
+CONF_BLOCKER_OVERRIDABLE: Final = "overridable"
+CONF_ROOM_POSITIONS: Final = "room_positions"
+
+# Legacy keys, read only by async_migrate_entry to turn 0.1.x entity-id
+# blockers into named rules.
 CONF_GLOBAL_BLOCKERS: Final = "global_blockers"
 CONF_ROOM_BLOCKERS: Final = "room_blockers"
 CONF_ROOM_HARD_BLOCKERS: Final = "room_hard_blockers"
-CONF_ROOM_POSITIONS: Final = "room_positions"
 
 CONF_WINDOW_START: Final = "window_start"
 CONF_WINDOW_END: Final = "window_end"

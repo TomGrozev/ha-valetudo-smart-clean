@@ -5,8 +5,19 @@ from __future__ import annotations
 from homeassistant.core import HomeAssistant
 
 from custom_components.valetudo_smart_clean import build_config, build_snapshot
+from custom_components.valetudo_smart_clean.const import CONF_BLOCKER_RULES
 from custom_components.valetudo_smart_clean.core.models import VacuumStatus
+from custom_components.valetudo_smart_clean.rules import (
+    async_compile_rules,
+    rules_from_options,
+)
 from tests.ha.conftest import BATTERY, ERROR, HOUSE_QUIET, VACUUM
+
+
+async def _snapshot(hass, entry):
+    rules = rules_from_options(entry.options)
+    compiled, _ = await async_compile_rules(hass, rules)
+    return build_snapshot(hass, build_config(entry, rules), dict(entry.data), compiled)
 
 
 async def test_snapshot_reads_docked_robot(hass: HomeAssistant, entry, fake_robot) -> None:
@@ -51,12 +62,12 @@ async def test_snapshot_only_on_counts_as_blocker(
     hass: HomeAssistant, entry, fake_robot
 ) -> None:
     hass.states.async_set(HOUSE_QUIET, "home")
-    snapshot = build_snapshot(hass, build_config(entry), dict(entry.data))
+    snapshot = await _snapshot(hass, entry)
     assert snapshot.active_blockers == {}
 
     hass.states.async_set(HOUSE_QUIET, "on")
-    snapshot = build_snapshot(hass, build_config(entry), dict(entry.data))
-    assert HOUSE_QUIET in snapshot.active_blockers
+    snapshot = await _snapshot(hass, entry)
+    assert snapshot.active_blockers == {"house-quiet": "House quiet"}
 
 
 async def test_snapshot_battery_unknown(hass: HomeAssistant, entry, fake_robot) -> None:
@@ -68,18 +79,30 @@ async def test_snapshot_battery_unknown(hass: HomeAssistant, entry, fake_robot) 
 async def test_snapshot_includes_hard_blockers(
     hass: HomeAssistant, entry, fake_robot
 ) -> None:
-    from custom_components.valetudo_smart_clean.const import CONF_ROOM_HARD_BLOCKERS
-
     hass.config_entries.async_update_entry(
         entry,
         options={
             **entry.options,
-            CONF_ROOM_HARD_BLOCKERS: {"toilet": ["binary_sensor.hamish_asleep"]},
+            CONF_BLOCKER_RULES: [
+                {
+                    "id": "hamish",
+                    "name": "Hamish asleep",
+                    "conditions": [
+                        {
+                            "condition": "state",
+                            "entity_id": "binary_sensor.hamish_asleep",
+                            "state": "on",
+                        }
+                    ],
+                    "rooms": ["toilet"],
+                    "overridable": False,
+                }
+            ],
         },
     )
     hass.states.async_set("binary_sensor.hamish_asleep", "on")
 
     config = build_config(entry)
-    assert config.rooms[1].hard_blockers == ("binary_sensor.hamish_asleep",)
-    snapshot = build_snapshot(hass, config, dict(entry.data))
-    assert "binary_sensor.hamish_asleep" in snapshot.active_blockers
+    assert config.rooms[1].hard_blockers == ("hamish",)
+    snapshot = await _snapshot(hass, entry)
+    assert snapshot.active_blockers["hamish"] == "Hamish asleep"

@@ -39,7 +39,10 @@ from .const import (
     ATTR_ROOMS,
     ATTR_WHEN,
     CONF_BATTERY,
+    CONF_BLOCKER_RULES,
     CONF_CLEAN_FAN,
+    CONFIG_ENTRY_MINOR_VERSION,
+    CONFIG_ENTRY_VERSION,
     CONF_DAILY_REPORT,
     CONF_DISPATCH_TIMEOUT,
     CONF_DOCK_CONSUMABLES,
@@ -143,6 +146,14 @@ from .core.models import (
     StopJob,
     VacuumStatus,
 )
+from .rules import (
+    BlockingRule,
+    CompiledRule,
+    async_compile_rules,
+    async_unload_rules,
+    rules_from_legacy_blockers,
+    rules_from_options,
+)
 from .values import parse_time, parse_weekdays
 
 _LOGGER = logging.getLogger(__name__)
@@ -176,13 +187,26 @@ def _optional_text(options: dict[str, Any], key: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def build_config(entry: ConfigEntry) -> Config:
+def build_config(
+    entry: ConfigEntry, rules: tuple[BlockingRule, ...] | None = None
+) -> Config:
     """Build the immutable core config from the entry data and options."""
     data = entry.data
     options = entry.options
     positions: dict[str, list[str]] = options.get(CONF_ROOM_POSITIONS, {})
-    blockers: dict[str, list[str]] = options.get(CONF_ROOM_BLOCKERS, {})
-    hard_blockers: dict[str, list[str]] = options.get(CONF_ROOM_HARD_BLOCKERS, {})
+    blocker_rules = rules if rules is not None else rules_from_options(options)
+    blockers: dict[str, list[str]] = {}
+    hard_blockers: dict[str, list[str]] = {}
+    global_blockers: list[str] = []
+    for rule in blocker_rules:
+        if rule.whole_house:
+            # A whole-house rule is never overridable; clean_when_occupied does
+            # not open the house.
+            global_blockers.append(rule.id)
+            continue
+        target = blockers if rule.effective_overridable else hard_blockers
+        for room_id in rule.rooms:
+            target.setdefault(room_id, []).append(rule.id)
 
     rooms = tuple(
         RoomConfig(
@@ -199,7 +223,7 @@ def build_config(entry: ConfigEntry) -> Config:
 
     return Config(
         rooms=rooms,
-        global_blockers=tuple(options.get(CONF_GLOBAL_BLOCKERS, [])),
+        global_blockers=tuple(global_blockers),
         window_start=parse_time(options.get(CONF_WINDOW_START), DEFAULT_WINDOW_START),
         window_end=parse_time(options.get(CONF_WINDOW_END), DEFAULT_WINDOW_END),
         weekdays=parse_weekdays(options.get(CONF_WEEKDAYS), DEFAULT_WEEKDAYS),
@@ -270,24 +294,42 @@ def _position(hass: HomeAssistant, data: dict[str, Any], cfg: Config) -> str | N
     return None
 
 
-def _active_blockers(hass: HomeAssistant, cfg: Config) -> dict[str, str]:
-    """Return blocker entity id -> reason for every blocker that is exactly on."""
-    blockers: dict[str, str] = {}
-    entity_ids = list(cfg.global_blockers)
-    for room in cfg.rooms:
-        entity_ids.extend(room.blockers)
-        entity_ids.extend(room.hard_blockers)
-    for entity_id in dict.fromkeys(entity_ids):
-        state = hass.states.get(entity_id)
-        if state is None or state.state != "on":
-            continue
-        reason = state.name or state.entity_id
-        blockers[entity_id] = reason
-    return blockers
+def _active_blockers(rules: tuple[CompiledRule, ...]) -> dict[str, str]:
+    """Evaluate every rule: id -> reason for the rules that are active now.
+
+    A rule that raises is active. A sleeping child must not be woken up because
+    a template had a typo, so the failure is logged once per rule and the rule
+    keeps blocking until it evaluates cleanly again.
+    """
+    active: dict[str, str] = {}
+    for rule in rules:
+        try:
+            is_active = rule.async_check()
+            reason = rule.name
+        except Exception as err:  # noqa: BLE001 - fail closed on any condition error
+            is_active = True
+            reason = f"{rule.name} (rule error)"
+            if not rule.error_logged:
+                _LOGGER.error(
+                    "Blocker rule %s failed to evaluate; blocking until it "
+                    "recovers: %s",
+                    rule.name,
+                    err,
+                    exc_info=True,
+                )
+                rule.error_logged = True
+        if is_active:
+            active[rule.id] = reason
+    return active
 
 
-def build_snapshot(hass: HomeAssistant, cfg: Config, data: dict[str, Any]) -> Snapshot:
-    """Build the core snapshot from the watched entity states."""
+def build_snapshot(
+    hass: HomeAssistant,
+    cfg: Config,
+    data: dict[str, Any],
+    rules: tuple[CompiledRule, ...] = (),
+) -> Snapshot:
+    """Build the core snapshot from the watched entity states and rule results."""
     now = dt_util.now()
     vacuum_state = _ha_state(hass, data.get(CONF_VACUUM))
     vacuum = (
@@ -337,7 +379,7 @@ def build_snapshot(hass: HomeAssistant, cfg: Config, data: dict[str, Any]) -> Sn
         dock_ok=dock_ok,
         battery=battery,
         position=_position(hass, data, cfg),
-        active_blockers=_active_blockers(hass, cfg),
+        active_blockers=_active_blockers(rules),
         fan=fan_state.state if fan_state is not None else None,
         mode=mode_state.state if mode_state is not None else None,
     )
@@ -353,11 +395,12 @@ class SmartCleanRuntime:
         self.hass = hass
         self.entry = entry
         self.data: dict[str, Any] = dict(entry.data)
-        self.config = build_config(entry)
+        self.rules = rules_from_options(entry.options)
+        self.config = build_config(entry, self.rules)
+        self.compiled_rules: tuple[CompiledRule, ...] = ()
+        self._rule_entity_ids: set[str] = set()
         self.state: State = new_state(self.config)
-        self.status = describe(
-            self.state, build_snapshot(hass, self.config, self.data), self.config
-        )
+        self.status = describe(self.state, self._snapshot(), self.config)
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
         )
@@ -384,10 +427,11 @@ class SmartCleanRuntime:
                     self.entry.entry_id,
                     exc_info=True,
                 )
-        self._saved = state_to_dict(self.state)
-        self.status = describe(
-            self.state, build_snapshot(self.hass, self.config, self.data), self.config
+        self.compiled_rules, self._rule_entity_ids = await async_compile_rules(
+            self.hass, self.rules
         )
+        self._saved = state_to_dict(self.state)
+        self.status = describe(self.state, self._snapshot(), self.config)
 
     @callback
     def async_start(self) -> None:
@@ -413,6 +457,7 @@ class SmartCleanRuntime:
             self._stopped = True
             while self._unsubs:
                 self._unsubs.pop()()
+            async_unload_rules(self.compiled_rules)
             payload = state_to_dict(self.state)
             await self._store.async_save(payload)
             self._saved = payload
@@ -432,10 +477,7 @@ class SmartCleanRuntime:
             )
         ]
         ids.extend(self.data.get(CONF_DOCK_CONSUMABLES, []))
-        ids.extend(self.config.global_blockers)
-        for room in self.config.rooms:
-            ids.extend(room.blockers)
-            ids.extend(room.hard_blockers)
+        ids.extend(self._rule_entity_ids)
         return [entity_id for entity_id in dict.fromkeys(ids) if entity_id]
 
     # -- driving the core -------------------------------------------------
@@ -485,7 +527,9 @@ class SmartCleanRuntime:
         await self._apply(result, snap)
 
     def _snapshot(self) -> Snapshot:
-        return build_snapshot(self.hass, self.config, self.data)
+        return build_snapshot(
+            self.hass, self.config, self.data, self.compiled_rules
+        )
 
     async def _apply(self, result: Result, snap: Snapshot) -> None:
         self.state = result.state
@@ -758,6 +802,48 @@ type SmartCleanConfigEntry = ConfigEntry[SmartCleanRuntime]
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Register the integration's services once for every entry."""
     _async_register_services(hass)
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Turn 0.1.x entity-id blockers into named rules."""
+    if entry.version > CONFIG_ENTRY_VERSION:
+        _LOGGER.error(
+            "Config entry %s has version %s, newer than this integration supports",
+            entry.entry_id,
+            entry.version,
+        )
+        return False
+    if (
+        entry.version == CONFIG_ENTRY_VERSION
+        and entry.minor_version >= CONFIG_ENTRY_MINOR_VERSION
+    ):
+        return True
+
+    options = dict(entry.options)
+
+    def name_for(entity_id: str) -> str:
+        state = hass.states.get(entity_id)
+        return (state.name if state is not None else None) or entity_id
+
+    legacy = rules_from_legacy_blockers(
+        options, list(entry.data.get(CONF_ROOMS, [])), name_for
+    )
+    for key in (
+        CONF_GLOBAL_BLOCKERS,
+        CONF_ROOM_BLOCKERS,
+        CONF_ROOM_HARD_BLOCKERS,
+    ):
+        options.pop(key, None)
+    if CONF_BLOCKER_RULES not in options:
+        options[CONF_BLOCKER_RULES] = legacy
+
+    hass.config_entries.async_update_entry(
+        entry,
+        options=options,
+        version=CONFIG_ENTRY_VERSION,
+        minor_version=CONFIG_ENTRY_MINOR_VERSION,
+    )
     return True
 
 

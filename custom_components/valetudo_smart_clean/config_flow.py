@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import time
 from typing import Any
+from uuid import uuid4
 
 import voluptuous as vol
 
@@ -16,11 +17,15 @@ from homeassistant.helpers.selector import (
     AreaSelector,
     AreaSelectorConfig,
     BooleanSelector,
+    ConditionSelector,
+    ConditionSelectorConfig,
     EntitySelector,
     EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    ObjectSelector,
+    ObjectSelectorConfig,
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
@@ -30,7 +35,15 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_BATTERY,
+    CONF_BLOCKER_CONDITIONS,
+    CONF_BLOCKER_ID,
+    CONF_BLOCKER_NAME,
+    CONF_BLOCKER_OVERRIDABLE,
+    CONF_BLOCKER_ROOMS,
+    CONF_BLOCKER_RULES,
     CONF_CLEAN_FAN,
+    CONFIG_ENTRY_MINOR_VERSION,
+    CONFIG_ENTRY_VERSION,
     CONF_DAILY_REPORT,
     CONF_DISPATCH_TIMEOUT,
     CONF_DOCK_CONSUMABLES,
@@ -39,7 +52,6 @@ from .const import (
     CONF_END_SETTLE,
     CONF_ERROR,
     CONF_FAN,
-    CONF_GLOBAL_BLOCKERS,
     CONF_MAP_SEGMENTS,
     CONF_MAX_ATTEMPTS,
     CONF_MAX_PRESENCE_GAP,
@@ -57,8 +69,6 @@ from .const import (
     CONF_QUIET_TRAVEL,
     CONF_RESUME_TIMEOUT,
     CONF_RETRY_DELAY,
-    CONF_ROOM_BLOCKERS,
-    CONF_ROOM_HARD_BLOCKERS,
     CONF_ROOM_ID,
     CONF_ROOM_NAME,
     CONF_ROOM_POSITIONS,
@@ -90,6 +100,7 @@ from .const import (
     DOMAIN,
     WEEKDAY_NAMES,
 )
+from .rules import async_validate_rule_conditions, jsonable_conditions
 from .values import parse_time, parse_weekdays
 
 _LOGGER = logging.getLogger(__name__)
@@ -116,7 +127,8 @@ def _weekday_values(options: dict[str, Any], key: str, default: list[str]) -> li
 class ValetudoSmartCleanConfigFlow(ConfigFlow, domain=DOMAIN):
     """Three steps: the robot, the entities read from it, and the rooms."""
 
-    VERSION = 1
+    VERSION = CONFIG_ENTRY_VERSION
+    MINOR_VERSION = CONFIG_ENTRY_MINOR_VERSION
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
@@ -353,11 +365,12 @@ class ValetudoSmartCleanConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class ValetudoSmartCleanOptionsFlow(OptionsFlow):
-    """Schedule, behaviour, per-room settings and global blockers."""
+    """Schedule, behaviour, room positions and named blocker rules."""
 
     def __init__(self) -> None:
         self._pending: dict[str, Any] | None = None
         self._room_id: str | None = None
+        self._rule_id: str | None = None
 
     @property
     def _options(self) -> dict[str, Any]:
@@ -589,21 +602,9 @@ class ValetudoSmartCleanOptionsFlow(OptionsFlow):
             None,
         )
         positions = self._options.get(CONF_ROOM_POSITIONS, {})
-        blockers = self._options.get(CONF_ROOM_BLOCKERS, {})
-        hard_blockers = self._options.get(CONF_ROOM_HARD_BLOCKERS, {})
         if user_input is not None:
             positions = {**positions, self._room_id: _split_values(user_input)}
-            blockers = {
-                **blockers,
-                self._room_id: list(user_input.get(CONF_ROOM_BLOCKERS, [])),
-            }
-            hard_blockers = {
-                **hard_blockers,
-                self._room_id: list(user_input.get(CONF_ROOM_HARD_BLOCKERS, [])),
-            }
             self._options[CONF_ROOM_POSITIONS] = positions
-            self._options[CONF_ROOM_BLOCKERS] = blockers
-            self._options[CONF_ROOM_HARD_BLOCKERS] = hard_blockers
             return await self.async_step_init()
         current_positions = positions.get(
             self._room_id,
@@ -617,28 +618,6 @@ class ValetudoSmartCleanOptionsFlow(OptionsFlow):
                         CONF_POSITION_VALUES,
                         default=", ".join(current_positions),
                     ): TextSelector(),
-                    vol.Optional(
-                        CONF_ROOM_BLOCKERS,
-                        description={
-                            "suggested_value": blockers.get(self._room_id, [])
-                        },
-                    ): EntitySelector(
-                        EntitySelectorConfig(
-                            domain=["binary_sensor", "input_boolean", "switch"],
-                            multiple=True,
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_ROOM_HARD_BLOCKERS,
-                        description={
-                            "suggested_value": hard_blockers.get(self._room_id, [])
-                        },
-                    ): EntitySelector(
-                        EntitySelectorConfig(
-                            domain=["binary_sensor", "input_boolean", "switch"],
-                            multiple=True,
-                        )
-                    ),
                 }
             ),
             description_placeholders={
@@ -651,30 +630,261 @@ class ValetudoSmartCleanOptionsFlow(OptionsFlow):
     async def async_step_blockers(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        return self.async_show_menu(
+            step_id="blockers",
+            menu_options=[
+                "blocker_add",
+                "blocker_edit",
+                "blocker_delete",
+                "blocker_import",
+                "blocker_back",
+            ],
+        )
+
+    async def async_step_blocker_back(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self.async_step_init()
+
+    async def async_step_blocker_add(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return await self._async_rule_form(
+            user_input, step_id="blocker_add", rule=None
+        )
+
+    async def async_step_blocker_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         if user_input is not None:
-            self._options[CONF_GLOBAL_BLOCKERS] = list(
-                user_input.get(CONF_GLOBAL_BLOCKERS, [])
+            self._rule_id = str(user_input[CONF_BLOCKER_ID])
+            return await self.async_step_blocker_edit_form()
+        return self._show_rule_picker("blocker_edit")
+
+    async def async_step_blocker_edit_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        rule = next(
+            (
+                rule
+                for rule in self._stored_rules()
+                if str(rule.get(CONF_BLOCKER_ID)) == self._rule_id
+            ),
+            None,
+        )
+        if rule is None:
+            return await self.async_step_blockers()
+        return await self._async_rule_form(
+            user_input, step_id="blocker_edit_form", rule=rule
+        )
+
+    async def async_step_blocker_delete(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            rule_id = str(user_input[CONF_BLOCKER_ID])
+            self._save_rules(
+                [
+                    rule
+                    for rule in self._stored_rules()
+                    if str(rule.get(CONF_BLOCKER_ID)) != rule_id
+                ]
             )
             return await self.async_step_init()
+        return self._show_rule_picker("blocker_delete")
+
+    async def async_step_blocker_import(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            raw = user_input.get(CONF_BLOCKER_RULES)
+            imported: list[dict[str, Any]] = []
+            if not isinstance(raw, list) or not raw:
+                errors[CONF_BLOCKER_RULES] = "invalid_rules"
+            else:
+                for entry in raw:
+                    if not isinstance(entry, dict):
+                        errors[CONF_BLOCKER_RULES] = "invalid_rules"
+                        break
+                    name = str(entry.get(CONF_BLOCKER_NAME) or "").strip()
+                    conditions = entry.get(CONF_BLOCKER_CONDITIONS) or []
+                    rooms = entry.get(CONF_BLOCKER_ROOMS) or []
+                    if (
+                        not name
+                        or not isinstance(conditions, (list, tuple))
+                        or not isinstance(rooms, (list, tuple))
+                    ):
+                        errors[CONF_BLOCKER_RULES] = "invalid_rules"
+                        break
+                    try:
+                        await async_validate_rule_conditions(self.hass, conditions)
+                    except Exception:
+                        errors[CONF_BLOCKER_RULES] = "invalid_conditions"
+                        break
+                    room_ids = [str(room) for room in rooms]
+                    imported.append(
+                        {
+                            CONF_BLOCKER_ID: uuid4().hex,
+                            CONF_BLOCKER_NAME: name,
+                            CONF_BLOCKER_CONDITIONS: jsonable_conditions(
+                                list(conditions)
+                            ),
+                            CONF_BLOCKER_ROOMS: room_ids,
+                            CONF_BLOCKER_OVERRIDABLE: bool(
+                                entry.get(CONF_BLOCKER_OVERRIDABLE, True)
+                            )
+                            and bool(room_ids),
+                        }
+                    )
+            if not errors:
+                replaced = {
+                    str(rule.get(CONF_BLOCKER_NAME)) for rule in imported
+                }
+                self._save_rules(
+                    [
+                        rule
+                        for rule in self._stored_rules()
+                        if str(rule.get(CONF_BLOCKER_NAME)) not in replaced
+                    ]
+                    + imported
+                )
+                return await self.async_step_init()
         return self.async_show_form(
-            step_id="blockers",
+            step_id="blocker_import",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_BLOCKER_RULES): ObjectSelector()}
+            ),
+            errors=errors,
+        )
+
+    # -- blocker helpers --------------------------------------------------
+
+    @callback
+    def _stored_rules(self) -> list[dict[str, Any]]:
+        rules = self._options.get(CONF_BLOCKER_RULES, [])
+        return [dict(rule) for rule in rules if isinstance(rule, dict)]
+
+    @callback
+    def _save_rules(self, rules: list[dict[str, Any]]) -> None:
+        self._options[CONF_BLOCKER_RULES] = rules
+
+    @callback
+    def _show_rule_picker(self, step_id: str) -> ConfigFlowResult:
+        rules = self._stored_rules()
+        return self.async_show_form(
+            step_id=step_id,
             data_schema=vol.Schema(
                 {
-                    vol.Optional(
-                        CONF_GLOBAL_BLOCKERS,
-                        description={
-                            "suggested_value": self._options.get(
-                                CONF_GLOBAL_BLOCKERS, []
-                            )
-                        },
-                    ): EntitySelector(
-                        EntitySelectorConfig(
-                            domain=["binary_sensor", "input_boolean", "switch"],
-                            multiple=True,
+                    vol.Required(CONF_BLOCKER_ID): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(
+                                    value=str(rule.get(CONF_BLOCKER_ID)),
+                                    label=str(
+                                        rule.get(CONF_BLOCKER_NAME)
+                                        or rule.get(CONF_BLOCKER_ID)
+                                    ),
+                                )
+                                for rule in rules
+                            ]
                         )
                     )
                 }
             ),
+        )
+
+    @callback
+    def _rule_schema(self, source: dict[str, Any] | None) -> vol.Schema:
+        source = source or {}
+        room_ids = [room[CONF_ROOM_ID] for room in self._rooms]
+        rooms = [
+            str(room)
+            for room in source.get(CONF_BLOCKER_ROOMS, []) or []
+            if str(room) in room_ids
+        ]
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_BLOCKER_NAME,
+                    default=str(source.get(CONF_BLOCKER_NAME) or ""),
+                ): TextSelector(),
+                vol.Required(
+                    CONF_BLOCKER_CONDITIONS,
+                    default=list(source.get(CONF_BLOCKER_CONDITIONS) or []),
+                ): ConditionSelector(ConditionSelectorConfig()),
+                vol.Optional(CONF_BLOCKER_ROOMS, default=rooms): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[
+                            SelectOptionDict(
+                                value=room[CONF_ROOM_ID],
+                                label=room.get(CONF_ROOM_NAME, room[CONF_ROOM_ID]),
+                            )
+                            for room in self._rooms
+                        ],
+                        multiple=True,
+                    )
+                ),
+                vol.Optional(
+                    CONF_BLOCKER_OVERRIDABLE,
+                    default=bool(source.get(CONF_BLOCKER_OVERRIDABLE, True)),
+                ): BooleanSelector(),
+            }
+        )
+
+    async def _async_rule_form(
+        self,
+        user_input: dict[str, Any] | None,
+        *,
+        step_id: str,
+        rule: dict[str, Any] | None,
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            name = str(user_input.get(CONF_BLOCKER_NAME) or "").strip()
+            conditions = user_input.get(CONF_BLOCKER_CONDITIONS) or []
+            if not name:
+                errors[CONF_BLOCKER_NAME] = "name_required"
+            if not errors:
+                try:
+                    await async_validate_rule_conditions(self.hass, conditions)
+                except Exception:
+                    errors[CONF_BLOCKER_CONDITIONS] = "invalid_conditions"
+            if not errors:
+                rooms = [
+                    str(room) for room in user_input.get(CONF_BLOCKER_ROOMS) or []
+                ]
+                new_rule = {
+                    CONF_BLOCKER_ID: str(
+                        (rule or {}).get(CONF_BLOCKER_ID) or uuid4().hex
+                    ),
+                    CONF_BLOCKER_NAME: name,
+                    CONF_BLOCKER_CONDITIONS: jsonable_conditions(list(conditions)),
+                    CONF_BLOCKER_ROOMS: rooms,
+                    # A whole-house rule is never overridable.
+                    CONF_BLOCKER_OVERRIDABLE: bool(
+                        user_input.get(CONF_BLOCKER_OVERRIDABLE, True)
+                    )
+                    and bool(rooms),
+                }
+                rules = self._stored_rules()
+                if rule is None:
+                    rules.append(new_rule)
+                else:
+                    rule_id = new_rule[CONF_BLOCKER_ID]
+                    rules = [
+                        new_rule
+                        if str(existing.get(CONF_BLOCKER_ID)) == rule_id
+                        else existing
+                        for existing in rules
+                    ]
+                self._save_rules(rules)
+                return await self.async_step_init()
+        source = user_input if user_input is not None else rule
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self._rule_schema(source),
+            errors=errors,
         )
 
     # -- helpers ----------------------------------------------------------

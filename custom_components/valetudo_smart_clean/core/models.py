@@ -24,10 +24,11 @@ class RoomConfig:
     position_values: tuple[str, ...] = ()
     """Raw values of the position source that mean the robot is in this room."""
     blockers: tuple[str, ...] = ()
-    """Entity ids; the room is blocked while any of them is on. clean_when_occupied bypasses these."""
+    """Blocker rule ids; the room is blocked while any of them is active. clean_when_occupied
+    bypasses these."""
     hard_blockers: tuple[str, ...] = ()
-    """Entity ids that block the room even with clean_when_occupied (e.g. a sleeping child).
-    Only a job with ignore_blockers bypasses them."""
+    """Blocker rule ids that block the room even with clean_when_occupied (e.g. a sleeping
+    child). Only a job with ignore_blockers bypasses them."""
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class Config:
     rooms: tuple[RoomConfig, ...]
     """Order is the automatic cleaning order."""
     global_blockers: tuple[str, ...] = ()
-    """Entity ids; no automatic cleaning while any of them is on. Only a job with
+    """Blocker rule ids; no automatic cleaning while any of them is active. Only a job with
     ignore_blockers bypasses them; clean_when_occupied does not."""
     window_start: time = time(9, 0)
     window_end: time = time(17, 0)
@@ -103,7 +104,7 @@ class Snapshot:
     """room_id the position source reports, in every vacuum state; None when unknown or outside
     every room. The core decides when a position counts (the HA layer never masks it)."""
     active_blockers: Mapping[str, str]
-    """Blocker entity id -> reason text, for blockers that are on now."""
+    """Blocker rule id -> reason text (the rule's name), for rules that are active now."""
     fan: str | None
     mode: str | None
 

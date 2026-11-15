@@ -167,11 +167,64 @@ to send to the robot.
 - **Behaviour**: battery floor, attempts per day, dock dwell, timeouts, retry
   delay, presence threshold and fraction, longest credited gap, quiet travel and
   fan speeds, daily report.
-- **Rooms**: per-room position values and blockers.
-- **Global blockers**: any of these being `on` pauses automatic cleaning.
+- **Rooms**: per-room position values.
+- **Blockers**: named rules built from the same conditions as automations:
+  `state` (including `for`), `numeric_state`, `time`, `template`, `and`, `or`
+  and `not`. A rule blocks while every one of its conditions is true. Leave its
+  rooms empty for a whole-house rule. **Clean when occupied** overrides a room
+  rule unless the rule's *overridable* toggle is off; it never overrides a
+  whole-house rule.
 
-Only `on` counts as a blocker. `home`, `open`, `playing` and other states are
-ignored.
+Rules can also be imported as YAML in the Blockers menu. An import takes a list
+of rules without ids; rules with the same name are replaced.
+
+### Blocker rule examples
+
+Presence with a ten-minute hold: the room is blocked while nobody has been seen
+for ten minutes. A single brief detection does not wake the robot, and a
+template helper sensor is no longer needed.
+
+```yaml
+- name: Child room empty for 10 minutes
+  rooms: [child_room]
+  overridable: false
+  conditions:
+    - condition: not
+      conditions:
+        - condition: state
+          entity_id: binary_sensor.child_room_presence
+          state: "on"
+          for: 00:10:00
+```
+
+An `input_select` mode: block the whole house while the household mode is
+`Sleeping` or `Away`.
+
+```yaml
+- name: House mode is quiet
+  rooms: []
+  conditions:
+    - condition: state
+      entity_id: input_select.house_mode
+      state: ["Sleeping", "Away"]
+```
+
+A whole-house rule from a template: no automatic cleaning while the car is
+charging in the hallway. Whole-house rules always block, whatever
+*overridable* says.
+
+```yaml
+- name: Car charging in the hallway
+  rooms: []
+  overridable: true
+  conditions:
+    - condition: template
+      value_template: "{{ is_state('input_boolean.car_charging', 'on') }}"
+```
+
+A rule that cannot be evaluated (a broken template, for example) counts as
+active and shows `<name> (rule error)` as the reason. The error is logged once
+per rule and the rule blocks until it evaluates cleanly again.
 
 ## Requirements
 

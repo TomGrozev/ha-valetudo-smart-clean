@@ -14,6 +14,7 @@ from pytest_homeassistant.common import MockConfigEntry
 from custom_components.valetudo_smart_clean.const import (
     CONF_BATTERY,
     CONF_CLEAN_FAN,
+    CONF_BLOCKER_RULES,
     CONF_DAILY_REPORT,
     CONF_DISPATCH_TIMEOUT,
     CONF_DOCK_CONSUMABLES,
@@ -22,7 +23,6 @@ from custom_components.valetudo_smart_clean.const import (
     CONF_END_SETTLE,
     CONF_ERROR,
     CONF_FAN,
-    CONF_GLOBAL_BLOCKERS,
     CONF_MAX_ATTEMPTS,
     CONF_MAX_PRESENCE_GAP,
     CONF_MIN_BATTERY,
@@ -35,7 +35,6 @@ from custom_components.valetudo_smart_clean.const import (
     CONF_POSITION_ENTITY,
     CONF_QUIET_TRAVEL,
     CONF_RETRY_DELAY,
-    CONF_ROOM_BLOCKERS,
     CONF_ROOM_POSITIONS,
     CONF_ROOMS,
     CONF_STATUS_FLAG,
@@ -82,8 +81,17 @@ BASE_OPTIONS: dict[str, Any] = {
     CONF_TRAVEL_FAN: "low",
     CONF_CLEAN_FAN: "medium",
     CONF_DAILY_REPORT: False,
-    CONF_GLOBAL_BLOCKERS: [HOUSE_QUIET],
-    CONF_ROOM_BLOCKERS: {},
+    CONF_BLOCKER_RULES: [
+        {
+            "id": "house-quiet",
+            "name": "House quiet",
+            "conditions": [
+                {"condition": "state", "entity_id": HOUSE_QUIET, "state": "on"}
+            ],
+            "rooms": [],
+            "overridable": True,
+        }
+    ],
     CONF_ROOM_POSITIONS: {},
 }
 
@@ -153,6 +161,8 @@ def entry(hass: HomeAssistant, entry_data, areas) -> MockConfigEntry:
         data=entry_data,
         options=dict(BASE_OPTIONS),
         unique_id=VACUUM,
+        version=2,
+        minor_version=1,
     )
     mock_entry.add_to_hass(hass)
     return mock_entry
