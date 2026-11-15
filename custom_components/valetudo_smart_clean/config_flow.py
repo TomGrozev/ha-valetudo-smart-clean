@@ -97,8 +97,9 @@ _LOGGER = logging.getLogger(__name__)
 NO_MODE = SelectOptionDict(value="", label="Leave unchanged")
 
 
-def _time_value(options: dict[str, Any], key: str, default: time) -> time:
-    return parse_time(options.get(key), default)
+def _time_value(options: dict[str, Any], key: str, default: time) -> str:
+    """TimeSelector sends and expects "HH:MM:SS" strings, not time objects."""
+    return parse_time(options.get(key), default).isoformat(timespec="seconds")
 
 
 def _weekday_options() -> list[SelectOptionDict]:
@@ -387,12 +388,12 @@ class ValetudoSmartCleanOptionsFlow(OptionsFlow):
         if user_input is not None:
             self._options.update(
                 {
-                    CONF_WINDOW_START: user_input[CONF_WINDOW_START].isoformat(
-                        timespec="minutes"
-                    ),
-                    CONF_WINDOW_END: user_input[CONF_WINDOW_END].isoformat(
-                        timespec="minutes"
-                    ),
+                    CONF_WINDOW_START: parse_time(
+                        user_input[CONF_WINDOW_START], DEFAULT_WINDOW_START
+                    ).isoformat(timespec="minutes"),
+                    CONF_WINDOW_END: parse_time(
+                        user_input[CONF_WINDOW_END], DEFAULT_WINDOW_END
+                    ).isoformat(timespec="minutes"),
                     CONF_WEEKDAYS: [str(day) for day in user_input[CONF_WEEKDAYS]],
                     CONF_MOP_WEEKDAYS: [
                         str(day) for day in user_input.get(CONF_MOP_WEEKDAYS, [])

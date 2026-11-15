@@ -62,7 +62,9 @@ class _BaseSensor(SensorEntity):
         translation_key: str | None = None,
     ) -> None:
         self._runtime = runtime
-        self._attr_name = name
+        # Setting _attr_name, even to None, overrides the translated name.
+        if name is not None:
+            self._attr_name = name
         self._attr_translation_key = translation_key
         self._attr_unique_id = unique_id
         self._attr_device_info = device_info(runtime)

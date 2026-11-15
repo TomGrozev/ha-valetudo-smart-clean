@@ -71,8 +71,8 @@ async def test_options_flow_updates_schedule(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         {
-            "window_start": time(9, 30),
-            "window_end": time(16, 45),
+            "window_start": "09:30:00",
+            "window_end": "16:45:00",
             "weekdays": ["0", "1", "5"],
             "mop_weekdays": ["4"],
             "vacuum_mode": "vacuum",

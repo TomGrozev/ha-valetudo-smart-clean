@@ -44,6 +44,16 @@ async def test_setup_creates_device_and_entities(
     assert status_id is not None
     assert hass.states.get(status_id).state
     assert hass.states.get(unique_id_to_entity_id(hass, f"{entry.entry_id}_smart_clean")).state == "off"
+    # Fixed entities take their names from translations, so ids never collide.
+    assert {
+        unique_id_to_entity_id(hass, f"{entry.entry_id}_{key}")
+        for key in ("smart_clean", "clean_when_occupied", "status", "last_job")
+    } == {
+        "switch.willy_robot_smart_clean_smart_clean",
+        "switch.willy_robot_smart_clean_clean_when_occupied",
+        "sensor.willy_robot_smart_clean_status",
+        "sensor.willy_robot_smart_clean_last_job",
+    }
 
 
 async def test_unload_removes_listeners(
