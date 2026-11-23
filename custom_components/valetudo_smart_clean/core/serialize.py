@@ -81,6 +81,7 @@ def _job_to_dict(job: Job) -> dict:
         "return_home_failed": job.return_home_failed,
         "dispatch_since": _opt_dt(job.dispatch_since),
         "resume_expired": job.resume_expired,
+        "continuations": job.continuations,
         "error": job.error,
         "error_position": job.error_position,
     }
@@ -115,6 +116,7 @@ def _job_from_dict(data: dict) -> Job:
         return_home_failed=bool(data.get("return_home_failed")),
         dispatch_since=_dt_in(data.get("dispatch_since")),
         resume_expired=bool(data.get("resume_expired")),
+        continuations=int(data.get("continuations") or 0),
         error=data.get("error"),
         error_position=data.get("error_position"),
     )

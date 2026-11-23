@@ -53,14 +53,16 @@ def failed_gates(state: State, snap: Snapshot, cfg: Config) -> tuple[str, ...]:
         gates.append("cooldown")
     if not in_window(snap.now, cfg):
         gates.append("window")
+    if snap.error:
+        # An error on the dock is the real reason: it must not be reported as
+        # "not docked" just because the vacuum left the docked state.
+        gates.append("error")
     if snap.vacuum != VacuumStatus.DOCKED:
         gates.append("vacuum")
     if snap.now - snap.vacuum_since < cfg.dock_dwell:
         gates.append("dock_dwell")
     if snap.battery is None or snap.battery < cfg.min_battery:
         gates.append("battery")
-    if snap.error:
-        gates.append("error")
     dock_status = (snap.dock_status or "").lower()
     if not snap.dock_ok or dock_status not in {"", "idle", "drying"}:
         gates.append("dock")
@@ -81,6 +83,19 @@ def _job_id(now, origin: JobOrigin) -> str:
     return f"{now.isoformat()}:{origin.value}"
 
 
+def dispatch_commands(
+    snap: Snapshot, cfg: Config, rooms: tuple[str, ...]
+) -> list[Command]:
+    """Commands that start a cleaning run: the day's mode, then the rooms."""
+    today = snap.now.date()
+    mode = cfg.mop_mode if today.weekday() in cfg.mop_weekdays else cfg.vacuum_mode
+    commands: list[Command] = []
+    if mode is not None and mode != snap.mode:
+        commands.append(SetMode(mode))
+    commands.append(CleanRooms(rooms))
+    return commands
+
+
 def plan(state: State, snap: Snapshot, cfg: Config) -> list[Command]:
     if failed_gates(state, snap, cfg):
         return []
@@ -89,12 +104,6 @@ def plan(state: State, snap: Snapshot, cfg: Config) -> list[Command]:
         eligible = eligible[:1]
     if not eligible:
         return []
-
-    today = snap.now.date()
-    mode = cfg.mop_mode if today.weekday() in cfg.mop_weekdays else cfg.vacuum_mode
-    commands: list[Command] = []
-    if mode is not None and mode != snap.mode:
-        commands.append(SetMode(mode))
 
     rooms = tuple(eligible)
     state.job = Job(
@@ -109,7 +118,7 @@ def plan(state: State, snap: Snapshot, cfg: Config) -> list[Command]:
         last_vacuum=snap.vacuum,
         dispatch_since=snap.now,
     )
-    commands.append(CleanRooms(rooms))
+    commands = dispatch_commands(snap, cfg, rooms)
     commands.append(
         Emit(
             "job_started",

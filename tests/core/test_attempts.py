@@ -6,6 +6,7 @@ from core.models import (
     CleanRooms,
     JobEnd,
     NotifyKind,
+    ReturnHome,
     VacuumStatus,
 )
 
@@ -24,23 +25,45 @@ def test_room_never_visited_is_retried_then_skipped():
     sim.step(3, vacuum=VacuumStatus.CLEANING, position="kitchen")
     sim.step(60)
     sim.step(0, vacuum=VacuumStatus.RETURNING, position=None)
-    first_end = sim.step(60, vacuum=VacuumStatus.DOCKED, position=None)
-    sim.step(60)
-    assert clean_commands(first_end) == []
-    assert sim.state.last_result is not None
+    sim.step(60, vacuum=VacuumStatus.DOCKED, position=None)
+
+    # The robot went home with the toilet still to do. That is a dock trip, not
+    # a finish: the job stays open and the toilet is sent again once.
+    assert sim.state.job is not None
+    assert sim.state.last_result is None
+    assert sim.state.rooms["toilet"].attempts == 0
+    assert clean_commands(sim.step(600)) == [CleanRooms(("toilet",))]
+    assert sim.state.job.continuations == 1
+
+    # The robot starts the toilet but not for long enough, then docks again.
+    sim.step(0, vacuum=VacuumStatus.CLEANING, position="toilet")
+    sim.step(10, position="toilet")
+    sim.step(0, vacuum=VacuumStatus.RETURNING, position=None)
+    sim.step(60, vacuum=VacuumStatus.DOCKED, position=None)
+
+    # The one continuation is spent, so the second wait ends the job and the
+    # toilet uses its first attempt.
+    sim.step(599)
+    sim.step(1)
     assert sim.state.last_result.end == JobEnd.COMPLETED
     assert sim.state.last_result.failed == ("toilet",)
     assert sim.state.rooms["toilet"].attempts == 1
-    assert sim.state.cooldown_until is None
+    assert sim.state.rooms["kitchen"].attempts == 0
 
-    # Dock dwell passes; only the toilet is still due.
-    assert clean_commands(sim.step(120)) == [CleanRooms(("toilet",))]
-    sim.step(3, vacuum=VacuumStatus.CLEANING, position=None)
+    # The robot has been docked long enough that the retry starts at once; the
+    # second attempt runs out when the robot pauses in the toilet.
+    assert clean_commands(sim.commands) == [CleanRooms(("toilet",))]
+    sim.step(0, vacuum=VacuumStatus.CLEANING, position="toilet")
+    sim.step(10, position="toilet")
+    sim.step(0, vacuum=VacuumStatus.PAUSED, position="toilet")
+    paused = sim.step(301)
+    assert any(isinstance(command, ReturnHome) for command in paused)
+    sim.step(0, vacuum=VacuumStatus.RETURNING, position=None)
     sim.step(60, vacuum=VacuumStatus.DOCKED, position=None)
     second_end = sim.step(60)
 
     assert sim.state.job is None
-    assert sim.state.last_result.end == JobEnd.COMPLETED
+    assert sim.state.last_result.end == JobEnd.INTERRUPTED
     assert sim.state.last_result.failed == ("toilet",)
     toilet = sim.state.rooms["toilet"]
     assert toilet.attempts == 2

@@ -22,6 +22,9 @@ decision is recomputed from the current entity states on every change and every
 - Sends the whole due list with `vacuum.clean_area` and remembers what it sent.
 - Follows the robot room by room, credits the time it actually spends cleaning,
   and marks a room done only when it has had enough presence.
+- Recognises a mid-job dock trip (emptying the bin, a recharge) and keeps the
+  job open: the robot may carry on by itself, or the rooms still to clean are
+  sent again once as part of the same job.
 - Retries a room that did not get clean, up to twice a day, then skips it until
   tomorrow and asks you on your phone whether to try again.
 - Stops and sends the robot home when a blocker turns on, when it pauses too
@@ -37,8 +40,8 @@ A room is done when two things are true:
    `cleaning`, capped at 90 seconds per gap so an HA restart cannot invent
    presence. Short flickers between the toilet and the hallway add up instead of
    resetting the clock.
-2. The robot is **not in that room at the moment of judging**. At the end of a
-   job the robot is docked, so no room is "current".
+2. The robot is **not in that room at the moment of judging**. When the robot
+   docks, for a mid-job bin trip or at the end, no room is "current".
 
 "Enough time" is the larger of 30 seconds and 40% of the typical time that room
 needs, learned from its last five completed cleans. A small room like the toilet
@@ -56,6 +59,15 @@ Each room gets **two automatic attempts per day**. An attempt is used when a
 job ends with the room not clean: it completed without enough presence, the
 robot errored in it, or it was paused too long. Blocked-away rooms are dropped
 without using an attempt.
+
+A job that docks part-way through is not over. Valetudo drops the resumable flag
+when the robot reaches the dock, so the integration goes by the rooms still to
+clean instead: a docked robot with work left is emptying its bin or recharging.
+The job stays open, the robot may carry on by itself, and if it is still docked
+ten minutes later the remaining rooms are sent again as part of the same job.
+One resend is allowed per job; a later dock wait ends the job as completed and
+charges the rooms that never got cleaned. An error, a blocker or a pause timeout
+still ends the job straight away.
 
 When a room reaches two attempts it is skipped until tomorrow, and you get a
 notification with **Try again**. Tapping it clears the room's skip and attempts

@@ -37,10 +37,10 @@ def run_afternoon(min_presence: timedelta):
     sim.step(0, vacuum=VacuumStatus.RETURNING, position=None)
     sim.step(60, vacuum=VacuumStatus.DOCKED, position=None)
     sim.step(60)
+    ended_after_dock = sim.state.job is None
 
-    assert sim.state.job is None
-
-    # Keep ticking every 15-60 s until the window closes; nothing may re-dispatch.
+    # Keep ticking every 15-60 s until the window closes; a room that really is
+    # clean must not be re-dispatched, a room that is not may be.
     tick = 0
     while sim.now < at(17, 0):
         left = (at(17, 0) - sim.now).total_seconds()
@@ -50,18 +50,20 @@ def run_afternoon(min_presence: timedelta):
         if seconds == 0:
             break
 
-    return dispatches
+    return dispatches, ended_after_dock
 
 
 def test_replay_2026_11_12_toilet_is_dispatched_once_all_afternoon():
-    dispatches = run_afternoon(timedelta(seconds=30))
+    dispatches, ended_after_dock = run_afternoon(timedelta(seconds=30))
 
+    assert ended_after_dock
     assert dispatches == [CleanRooms(("toilet",))]
 
 
 def test_replay_fails_under_a_120_second_continuous_rule():
     # 120 s of cumulative presence is still too much for the flickering 30 s and
     # 48 s stints, so the toilet is retried and the old rule cannot pass.
-    dispatches = run_afternoon(timedelta(seconds=120))
+    dispatches, ended_after_dock = run_afternoon(timedelta(seconds=120))
 
+    assert not ended_after_dock
     assert len(dispatches) > 1

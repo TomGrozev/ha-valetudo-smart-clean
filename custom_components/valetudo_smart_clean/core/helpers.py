@@ -8,6 +8,7 @@ from .models import (
     Config,
     Emit,
     Job,
+    JobPhase,
     RoomConfig,
     RoomState,
     Snapshot,
@@ -131,6 +132,20 @@ def room_blocker(
 
 def remaining(job: Job) -> list[str]:
     return [room for room in job.rooms if room not in job.done and room not in job.dropped]
+
+
+def dock_trip(job: Job, snap: Snapshot) -> bool:
+    """The robot went home on its own mid-job (bin empty, recharge) and the job is not over.
+
+    Valetudo clears the resumable flag on arrival, so a docked robot with rooms
+    still to clean is a bin trip or a recharge, not a finish.
+    """
+    return (
+        job.phase == JobPhase.RUNNING
+        and job.stop is None
+        and snap.vacuum == VacuumStatus.DOCKED
+        and bool(remaining(job))
+    )
 
 
 def judged_rooms(job: Job, cfg: Config) -> tuple[str, ...]:

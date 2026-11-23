@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .finalise import end_job
 from .helpers import (
+    dock_trip,
     global_blocker,
     judge_rooms,
     remaining,
@@ -24,9 +25,11 @@ from .models import (
     StopCause,
     VacuumStatus,
 )
+from .planner import dispatch_commands
 
 
 MAX_RETURN_HOME = 3
+MAX_DOCK_CONTINUATIONS = 1
 
 
 def _send_return_home(
@@ -84,6 +87,14 @@ def judge_now(state: State, snap: Snapshot, cfg: Config) -> list[Command]:
     if job is None:
         return []
     newly_done = judge_rooms(job, state, snap, cfg)
+    return room_done_emits(newly_done, snap.now)
+
+
+def _judge_at_dock(state: State, snap: Snapshot, cfg: Config) -> list[Command]:
+    """A dock trip stops the presence clock: judge rooms already over the line."""
+    job = state.job
+    assert job is not None
+    newly_done = judge_rooms(job, state, snap, cfg, record_durations=True)
     return room_done_emits(newly_done, snap.now)
 
 
@@ -215,6 +226,32 @@ def advance(
                 ),
                 True,
             )
+        if dock_trip(job, snap):
+            # Judge from the presence already credited before deciding, so a
+            # trip that finished the last room is a normal finish and the
+            # resend only carries rooms that still need cleaning.
+            commands.extend(_judge_at_dock(state, snap, cfg))
+            left = remaining(job)
+            if left:
+                # A bin trip or recharge: the job stays open. A robot that
+                # resumes cleaning carries on in the same job; one that stays
+                # docked gets the remaining rooms sent once.
+                if (
+                    not resumable
+                    and snap.now - snap.vacuum_since >= cfg.dock_trip_wait
+                ):
+                    if job.continuations >= MAX_DOCK_CONTINUATIONS:
+                        return (
+                            end_job(state, snap, cfg, JobEnd.COMPLETED),
+                            True,
+                        )
+                    sent = tuple(left)
+                    job.dispatched = sent
+                    job.continuations += 1
+                    job.phase = JobPhase.DISPATCHED
+                    job.dispatch_since = snap.now
+                    commands.extend(dispatch_commands(snap, cfg, sent))
+                return commands, False
         if (
             not resumable
             and snap.vacuum in (VacuumStatus.DOCKED, VacuumStatus.IDLE)

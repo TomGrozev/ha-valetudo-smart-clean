@@ -38,10 +38,16 @@ def test_restart_mid_job_continues_and_caps_presence_gap():
 
     restarted.step(0, vacuum=VacuumStatus.RETURNING, position=None)
     restarted.step(60, vacuum=VacuumStatus.DOCKED)
+    # The toilet is still to clean, so this is a dock trip: the job stays open.
+    assert restarted.state.job is not None
+    restarted.step(0, vacuum=VacuumStatus.CLEANING, position="toilet")
+    restarted.step(40, position="toilet")
+    restarted.step(0, vacuum=VacuumStatus.RETURNING, position=None)
+    restarted.step(60, vacuum=VacuumStatus.DOCKED)
     restarted.step(60)
     assert restarted.state.job is None
     assert restarted.state.last_result.end == JobEnd.COMPLETED
-    assert restarted.state.last_result.done == ("kitchen",)
+    assert restarted.state.last_result.done == ("kitchen", "toilet")
 
 
 def test_state_from_dict_adds_missing_and_drops_unknown_rooms():

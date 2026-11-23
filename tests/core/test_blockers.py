@@ -85,8 +85,9 @@ def test_blocked_current_room_below_threshold_is_dropped():
     assert clean_commands(commands) == [CleanRooms(("kitchen",))]
     assert sim.state.job.phase == JobPhase.RUNNING
 
-    sim.step(0, vacuum=VacuumStatus.DOCKED)
-    sim.step(60)
+    # An error in the kitchen ends the job and charges the kitchen; the dropped
+    # toilet consumes no attempt.
+    sim.step(0, vacuum=VacuumStatus.ERROR, error="Stuck", position="kitchen")
     assert sim.state.job is None
     assert sim.state.last_result.failed == ("kitchen",)
     assert sim.state.rooms["toilet"].attempts == 0

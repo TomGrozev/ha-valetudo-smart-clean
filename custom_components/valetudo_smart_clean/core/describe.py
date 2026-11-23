@@ -6,6 +6,7 @@ from datetime import datetime
 
 from .helpers import (
     attempts_today,
+    dock_trip,
     global_blocker,
     is_due,
     is_enabled,
@@ -51,7 +52,7 @@ def _gate_reason(
     if gate == "battery":
         return "Battery is low"
     if gate == "error":
-        return "Robot has an error"
+        return f"Robot error: {snap.error}" if snap.error else "Robot has an error"
     if gate == "dock":
         return "Dock needs attention"
     if gate == "flag":
@@ -89,6 +90,14 @@ def describe(state: State, snap: Snapshot, cfg: Config) -> StatusView:
         elif job.phase == JobPhase.RETURNING:
             phase = "returning"
             sentence = "Returning home"
+        elif dock_trip(job, snap):
+            phase = "cleaning"
+            dock = (snap.dock_status or "").lower()
+            where = f" ({dock})" if dock else ""
+            sentence = (
+                f"Docked mid-clean{where}; will carry on with "
+                + _join_then([room_name(cfg, room) for room in left])
+            )
         else:
             phase = "cleaning"
             sentence = (

@@ -46,7 +46,11 @@ class Config:
     dock_dwell: timedelta = timedelta(minutes=2)
     """How long the robot must sit docked before an automatic job starts."""
     end_settle: timedelta = timedelta(seconds=60)
-    """How long docked or idle must hold before a job counts as ended."""
+    """How long docked or idle must hold, with nothing left to clean, before a job
+    counts as ended."""
+    dock_trip_wait: timedelta = timedelta(minutes=10)
+    """How long a running job may sit docked mid-clean (bin empty, recharge) before the
+    rooms still to clean are sent again."""
     dispatch_timeout: timedelta = timedelta(minutes=3)
     pause_timeout: timedelta = timedelta(minutes=5)
     resume_timeout: timedelta = timedelta(hours=3)
@@ -186,6 +190,8 @@ class Job:
     """When the robot was last observed available while DISPATCHED; timeout counts from here."""
     resume_expired: bool = False
     """Docked with flag resumable past resume_timeout; attempts are charged on the end."""
+    continuations: int = 0
+    """Mid-job dock trips that ended in the remaining rooms being sent again."""
     error: str | None = None
     error_position: str | None = None
 
